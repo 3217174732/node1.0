@@ -1,0 +1,30 @@
+[
+  "http://51.15.184.22:4941/hls/1787865391219_7b485400a7d8/playlist.m3u8",
+  "https://down-cdn.dingtalk.com/ddmedia/iwEbAqNtcDQDBgQABQAGsIcPUMWsHA4ICmIGM2q-BQAH0iGQOeAIAAmuY2lyY2xlLmNyZWF0b3IKAAvSABE3tw.mp4",
+  "http://51.15.184.22:4941/hls/1787865426574_aaf3b326e756/playlist.m3u8",
+  "https://nos.netease.com/cloudmusic/obj/wo7DlMODw6fDi2jDiMK-/78046883479/8698/202602802014/Video1478523306396741.mp4",
+  "http://51.15.184.22:4941/hls/1787868778971_62e9e143b2dd/playlist.m3u8",
+  "https://down-cdn.dingtalk.com/ddmedia/iwEbAqNtcDQDBgQABQAGsIcPUMWsHA4ICmIGM2q-BQAH0iGQOeAIAAmuY2lyY2xlLmNyZWF0b3IKAAvSABE3tw.mp4",
+  {
+    "uploadId": "1787869411788_40b56ceb902d",
+    "m3u8": "http://51.15.184.22:4941/hls/1787869411788_40b56ceb902d/playlist.m3u8",
+    "source": "https://down-cdn.dingtalk.com/ddmedia/iwEbAqNtcDQDBgQABQAGsIcPUMWsHA4ICmIGM2q-BQAH0iGQOeAIAAmuY2lyY2xlLmNyZWF0b3IKAAvSABE3tw.mp4",
+    "createdAt": 1787869411791
+  },
+  {
+    "uploadId": "1787869466807_04353af6db86",
+    "m3u8": "http://51.15.184.22:4941/hls/1787869466807_04353af6db86/playlist.m3u8",
+    "source": "https://nos.netease.com/cloudmusic/obj/wo7DlMODw6fDi2jDiMK-/78046883479/8698/202602802014/Video1478523306396741.mp4",
+    "createdAt": 1787869466808
+  },
+  {
+    "uploadId": "1787869829825_90d055ac08f8",
+    "m3u8": "http://51.15.184.22:4941/hls/1787869829825_90d055ac08f8/playlist.m3u8",
+    "source": "9527.mp4",
+    "createdAt": 1787869829827
+  },
+  "http://51.15.184.22:4941/hls/1787871043334_eb2fbf286033/playlist.m3u8",
+  "Screenrecorder-2026-06-23-16-27-51-739.mp4",
+  "http://51.15.184.22:4941/hls/1787871843272_bba12c750ae8/playlist.m3u8",
+  "https://nos.netease.com/cloudmusic/obj/wo7DlMODw6fDi2jDiMK-/78046883479/8698/202602802014/Video1478523306396741.mp4"
+]

@@ -1,0 +1,1795 @@
+<!DOCTYPE html><html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"><title>视频上传</title><style>
+* {
+    box-sizing: border-box;
+}
+
+html,
+body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    min-height: 100%;
+}
+
+body {
+    font-family:
+        -apple-system,
+        BlinkMacSystemFont,
+        "Segoe UI",
+        "Microsoft YaHei",
+        Arial,
+        sans-serif;
+
+    background: #f5f6f8;
+    color: #222;
+}
+
+/* =========================
+   主卡片
+========================= */
+
+.container {
+    width: min(720px, calc(100% - 24px));
+    margin: 30px auto;
+}
+
+.card {
+    background: #fff;
+    border-radius: 18px;
+    padding: 24px;
+    box-shadow:
+        0 6px 24px rgba(0,0,0,.06);
+}
+
+/* =========================
+   标题
+========================= */
+
+.title {
+    text-align: center;
+    font-size: 24px;
+    font-weight: 700;
+    margin-bottom: 22px;
+}
+
+.subtitle {
+    text-align: center;
+    color: #888;
+    font-size: 13px;
+    margin-top: -14px;
+    margin-bottom: 22px;
+}
+
+/* =========================
+   Tab
+========================= */
+
+.tabs {
+    display: flex;
+    background: #f1f2f4;
+    border-radius: 12px;
+    padding: 4px;
+    margin-bottom: 20px;
+}
+
+.tab {
+    flex: 1;
+    height: 42px;
+    border: 0;
+    border-radius: 9px;
+    background: transparent;
+    color: #777;
+    font-size: 15px;
+    cursor: pointer;
+}
+
+.tab.active {
+    background: #fff;
+    color: #222;
+    font-weight: 600;
+    box-shadow: 0 2px 8px rgba(0,0,0,.06);
+}
+
+/* =========================
+   上传区域
+========================= */
+
+.mode {
+    display: none;
+}
+
+.mode.active {
+    display: block;
+}
+
+.file-box {
+    border: 2px dashed #d8dce2;
+    border-radius: 16px;
+    min-height: 180px;
+
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+
+    text-align: center;
+    cursor: pointer;
+
+    transition: .2s;
+}
+
+.file-box:hover {
+    border-color: #999;
+}
+
+.file-box.dragover {
+    border-color: #555;
+    background: #fafafa;
+}
+
+.file-icon {
+    font-size: 42px;
+    margin-bottom: 10px;
+}
+
+.file-title {
+    font-size: 16px;
+    font-weight: 600;
+}
+
+.file-desc {
+    margin-top: 8px;
+    color: #999;
+    font-size: 13px;
+}
+
+input[type=file] {
+    display: none;
+}
+
+/* =========================
+   文件信息
+========================= */
+
+.file-info {
+    display: none;
+    margin-top: 14px;
+    padding: 12px 14px;
+    border-radius: 12px;
+    background: #f6f7f8;
+    font-size: 14px;
+    line-height: 1.7;
+}
+
+.file-info.show {
+    display: block;
+}
+
+.file-name {
+    word-break: break-all;
+    font-weight: 600;
+}
+
+.file-size {
+    color: #888;
+}
+
+/* =========================
+   URL
+========================= */
+
+.url-input {
+    width: 100%;
+    height: 48px;
+    padding: 0 14px;
+
+    border: 1px solid #ddd;
+    border-radius: 12px;
+
+    outline: none;
+    font-size: 14px;
+
+    background: #fff;
+}
+
+.url-input:focus {
+    border-color: #999;
+}
+
+.url-tip {
+    margin-top: 9px;
+    color: #999;
+    font-size: 12px;
+}
+
+/* =========================
+   按钮
+========================= */
+
+.upload-btn {
+    width: 100%;
+    height: 50px;
+
+    margin-top: 18px;
+
+    border: 0;
+    border-radius: 13px;
+
+    background: #222;
+    color: #fff;
+
+    font-size: 16px;
+    font-weight: 600;
+
+    cursor: pointer;
+}
+
+.upload-btn:disabled {
+    background: #d5d7da;
+    color: #999;
+    cursor: not-allowed;
+}
+
+/* =========================
+   进度
+========================= */
+
+.progress-wrap {
+    display: none;
+    margin-top: 20px;
+}
+
+.progress-wrap.show {
+    display: block;
+}
+
+.progress-info {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+
+    font-size: 13px;
+    margin-bottom: 8px;
+}
+
+.progress-bar {
+    width: 100%;
+    height: 8px;
+
+    background: #eee;
+    border-radius: 99px;
+    overflow: hidden;
+}
+
+.progress-inner {
+    width: 0%;
+    height: 100%;
+    background: #222;
+    transition: width .2s;
+}
+
+/* =========================
+   状态
+========================= */
+
+.status {
+    margin-top: 14px;
+    font-size: 13px;
+    color: #777;
+    text-align: center;
+    line-height: 1.6;
+}
+
+/* =========================
+   M3U8
+========================= */
+
+.result {
+    display: none;
+    margin-top: 22px;
+}
+
+.result.show {
+    display: block;
+}
+
+.result-title {
+    font-size: 15px;
+    font-weight: 600;
+    margin-bottom: 9px;
+}
+
+.m3u8-box {
+    width: 100%;
+    min-width: 0;
+
+    padding: 13px 14px;
+
+    background: #f4f5f7;
+    border: 1px solid #e1e3e7;
+    border-radius: 12px;
+
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.m3u8-url {
+    flex: 1;
+    min-width: 0;
+
+    font-size: 13px;
+    line-height: 1.5;
+
+    color: #444;
+
+    /*
+     * 自适应关键
+     */
+    overflow-wrap: anywhere;
+    word-break: break-all;
+}
+
+.copy-btn {
+    flex: 0 0 auto;
+
+    border: 0;
+    border-radius: 9px;
+
+    background: #222;
+    color: #fff;
+
+    padding: 9px 13px;
+
+    font-size: 12px;
+    cursor: pointer;
+}
+
+/* =========================
+   移动端
+========================= */
+
+@media (max-width: 600px) {
+
+    .container {
+        width: calc(100% - 16px);
+        margin: 12px auto;
+    }
+
+    .card {
+        padding: 18px;
+        border-radius: 16px;
+    }
+
+    .title {
+        font-size: 21px;
+        margin-bottom: 20px;
+    }
+
+    .file-box {
+        min-height: 160px;
+    }
+
+    .m3u8-box {
+        align-items: flex-start;
+    }
+
+    .copy-btn {
+        margin-top: 1px;
+    }
+}
+
+/* =========================
+   很小屏幕
+========================= */
+
+@media (max-width: 380px) {
+
+    .card {
+        padding: 14px;
+    }
+
+    .m3u8-box {
+        flex-direction: column;
+    }
+
+    .copy-btn {
+        width: 100%;
+    }
+}
+</style></head><body><div class="container"><div class="card">
+
+    <div class="title">
+        视频上传
+    </div>
+
+    <div class="subtitle">
+        本地视频上传 / 视频链接远程拉取
+    </div>
+
+
+    <!-- ======================
+         Tab
+    ======================= -->
+
+    <div class="tabs">
+
+        <button
+            class="tab active"
+            id="localTab"
+            type="button">
+            本地视频
+        </button>
+
+        <button
+            class="tab"
+            id="remoteTab"
+            type="button">
+            视频链接
+        </button>
+
+    </div>
+
+
+    <!-- ======================
+         本地视频
+    ======================= -->
+
+    <div
+        class="mode active"
+        id="localMode">
+
+        <label
+            class="file-box"
+            id="fileBox"
+            for="fileInput">
+
+            <div class="file-icon">
+                🎬
+            </div>
+
+            <div class="file-title">
+                点击选择视频
+            </div>
+
+            <div class="file-desc">
+                支持 MP4、MOV、MKV、AVI、WebM 等视频
+            </div>
+
+        </label>
+
+        <input
+            id="fileInput"
+            type="file"
+            accept="video/*">
+
+
+        <div
+            class="file-info"
+            id="fileInfo">
+
+            <div
+                class="file-name"
+                id="fileName">
+            </div>
+
+            <div
+                class="file-size"
+                id="fileSize">
+            </div>
+
+        </div>
+
+    </div>
+
+
+    <!-- ======================
+         视频 URL
+    ======================= -->
+
+    <div
+        class="mode"
+        id="remoteMode">
+
+        <input
+            id="urlInput"
+            class="url-input"
+            type="url"
+            placeholder="请输入视频直链 URL">
+
+        <div class="url-tip">
+            例如：https://example.com/video.mp4
+        </div>
+
+    </div>
+
+
+    <!-- ======================
+         上传按钮
+    ======================= -->
+
+    <button
+        id="uploadBtn"
+        class="upload-btn"
+        type="button"
+        disabled>
+
+        开始上传
+
+    </button>
+
+
+    <!-- ======================
+         进度
+    ======================= -->
+
+    <div
+        class="progress-wrap"
+        id="progressWrap">
+
+        <div class="progress-info">
+
+            <span id="progressText">
+                准备上传
+            </span>
+
+            <span id="progressPercent">
+                0%
+            </span>
+
+        </div>
+
+        <div class="progress-bar">
+
+            <div
+                class="progress-inner"
+                id="progressInner">
+            </div>
+
+        </div>
+
+    </div>
+
+
+    <div
+        class="status"
+        id="status">
+    </div>
+
+
+    <!-- ======================
+         M3U8
+    ======================= -->
+
+    <div
+        class="result"
+        id="result">
+
+        <div class="result-title">
+            M3U8 播放列表地址
+        </div>
+
+        <div class="m3u8-box">
+
+            <div
+                class="m3u8-url"
+                id="m3u8Url">
+            </div>
+
+            <button
+                class="copy-btn"
+                id="copyBtn"
+                type="button">
+                复制
+            </button>
+
+        </div>
+
+    </div>
+
+</div>
+
+</div><script>
+
+/* =========================================================
+   API
+========================================================= */
+
+const API_BASE =
+    window.location.origin;
+
+
+/* =========================================================
+   DOM
+========================================================= */
+
+const localTab =
+    document.getElementById(
+        'localTab'
+    );
+
+const remoteTab =
+    document.getElementById(
+        'remoteTab'
+    );
+
+const localMode =
+    document.getElementById(
+        'localMode'
+    );
+
+const remoteMode =
+    document.getElementById(
+        'remoteMode'
+    );
+
+const fileInput =
+    document.getElementById(
+        'fileInput'
+    );
+
+const fileBox =
+    document.getElementById(
+        'fileBox'
+    );
+
+const fileInfo =
+    document.getElementById(
+        'fileInfo'
+    );
+
+const fileName =
+    document.getElementById(
+        'fileName'
+    );
+
+const fileSize =
+    document.getElementById(
+        'fileSize'
+    );
+
+const urlInput =
+    document.getElementById(
+        'urlInput'
+    );
+
+const uploadBtn =
+    document.getElementById(
+        'uploadBtn'
+    );
+
+const progressWrap =
+    document.getElementById(
+        'progressWrap'
+    );
+
+const progressInner =
+    document.getElementById(
+        'progressInner'
+    );
+
+const progressText =
+    document.getElementById(
+        'progressText'
+    );
+
+const progressPercent =
+    document.getElementById(
+        'progressPercent'
+    );
+
+const status =
+    document.getElementById(
+        'status'
+    );
+
+const result =
+    document.getElementById(
+        'result'
+    );
+
+const m3u8Url =
+    document.getElementById(
+        'm3u8Url'
+    );
+
+const copyBtn =
+    document.getElementById(
+        'copyBtn'
+    );
+
+
+/* =========================================================
+   状态
+========================================================= */
+
+let currentMode =
+    'local';
+
+let selectedFile =
+    null;
+
+let uploading =
+    false;
+
+
+/* =========================================================
+   Tab
+========================================================= */
+
+localTab.addEventListener(
+    'click',
+    () => {
+
+        if (uploading) return;
+
+        currentMode =
+            'local';
+
+        localTab.classList.add(
+            'active'
+        );
+
+        remoteTab.classList.remove(
+            'active'
+        );
+
+        localMode.classList.add(
+            'active'
+        );
+
+        remoteMode.classList.remove(
+            'active'
+        );
+
+        updateButton();
+    }
+);
+
+
+remoteTab.addEventListener(
+    'click',
+    () => {
+
+        if (uploading) return;
+
+        currentMode =
+            'remote';
+
+        remoteTab.classList.add(
+            'active'
+        );
+
+        localTab.classList.remove(
+            'active'
+        );
+
+        remoteMode.classList.add(
+            'active'
+        );
+
+        localMode.classList.remove(
+            'active'
+        );
+
+        updateButton();
+    }
+);
+
+
+/* =========================================================
+   文件选择
+========================================================= */
+
+fileInput.addEventListener(
+    'change',
+    () => {
+
+        const file =
+            fileInput.files?.[0];
+
+        if (!file) {
+
+            selectedFile =
+                null;
+
+            fileInfo.classList.remove(
+                'show'
+            );
+
+            updateButton();
+
+            return;
+        }
+
+        selectedFile =
+            file;
+
+        fileName.textContent =
+            file.name;
+
+        fileSize.textContent =
+            formatBytes(
+                file.size
+            );
+
+        fileInfo.classList.add(
+            'show'
+        );
+
+        updateButton();
+    }
+);
+
+
+/* =========================================================
+   拖拽
+========================================================= */
+
+fileBox.addEventListener(
+    'dragover',
+    e => {
+
+        e.preventDefault();
+
+        fileBox.classList.add(
+            'dragover'
+        );
+    }
+);
+
+fileBox.addEventListener(
+    'dragleave',
+    () => {
+
+        fileBox.classList.remove(
+            'dragover'
+        );
+    }
+);
+
+fileBox.addEventListener(
+    'drop',
+    e => {
+
+        e.preventDefault();
+
+        fileBox.classList.remove(
+            'dragover'
+        );
+
+        const file =
+            e.dataTransfer.files?.[0];
+
+        if (!file) return;
+
+        if (
+            !file.type.startsWith(
+                'video/'
+            )
+        ) {
+
+            setStatus(
+                '请选择视频文件'
+            );
+
+            return;
+        }
+
+        selectedFile =
+            file;
+
+        fileName.textContent =
+            file.name;
+
+        fileSize.textContent =
+            formatBytes(
+                file.size
+            );
+
+        fileInfo.classList.add(
+            'show'
+        );
+
+        updateButton();
+    }
+);
+
+
+/* =========================================================
+   URL输入
+========================================================= */
+
+urlInput.addEventListener(
+    'input',
+    updateButton
+);
+
+
+/* =========================================================
+   上传按钮状态
+========================================================= */
+
+function updateButton() {
+
+    if (uploading) {
+
+        uploadBtn.disabled =
+            true;
+
+        return;
+    }
+
+    if (
+        currentMode ===
+        'local'
+    ) {
+
+        uploadBtn.disabled =
+            !selectedFile;
+
+    } else {
+
+        uploadBtn.disabled =
+            !urlInput.value.trim();
+    }
+}
+
+
+/* =========================================================
+   开始
+========================================================= */
+
+uploadBtn.addEventListener(
+    'click',
+    async () => {
+
+        if (uploading) return;
+
+        if (
+            currentMode ===
+            'local'
+        ) {
+
+            if (!selectedFile) {
+
+                return;
+            }
+
+            await uploadLocal(
+                selectedFile
+            );
+
+        } else {
+
+            const url =
+                urlInput.value.trim();
+
+            if (!url) {
+
+                return;
+            }
+
+            await uploadRemote(
+                url
+            );
+        }
+    }
+);
+
+
+/* =========================================================
+   本地视频上传
+========================================================= */
+
+async function uploadLocal(
+    file
+) {
+
+    uploading =
+        true;
+
+    updateButton();
+
+    resetResult();
+
+    progressWrap.classList.add(
+        'show'
+    );
+
+    setStatus(
+        '正在初始化上传...'
+    );
+
+    try {
+
+        /*
+         * 后端固定：
+         *
+         * 4MB
+         */
+
+        const chunkSize =
+            4 * 1024 * 1024;
+
+        const totalChunks =
+            Math.ceil(
+                file.size /
+                chunkSize
+            );
+
+
+        /* =========================
+           INIT
+        ========================= */
+
+        const init =
+            await request(
+                '/api/upload/init',
+                {
+                    method:
+                        'POST',
+
+                    headers:
+                        {
+                            'Content-Type':
+                                'application/json'
+                        },
+
+                    body:
+                        JSON.stringify(
+                            {
+                                filename:
+                                    file.name,
+
+                                size:
+                                    file.size,
+
+                                totalChunks:
+                                    totalChunks,
+
+                                chunkSize:
+                                    chunkSize
+                            }
+                        )
+                }
+            );
+
+
+        if (!init.ok) {
+
+            throw new Error(
+                init.error ||
+                '初始化失败'
+            );
+        }
+
+
+        const uploadId =
+            init.uploadId;
+
+
+        /*
+         * 后端返回实际分片大小
+         */
+
+        const realChunkSize =
+            Number(
+                init.chunkSize ||
+                chunkSize
+            );
+
+
+        /* =========================
+           查询已经上传的分片
+        ========================= */
+
+        let uploaded =
+            await getUploadedChunks(
+                uploadId
+            );
+
+
+        let uploadedBytes =
+            0;
+
+        uploaded.forEach(
+            item => {
+
+                uploadedBytes +=
+                    Number(
+                        item.size ||
+                        0
+                    );
+            }
+        );
+
+
+        updateProgress(
+            uploadedBytes,
+            file.size,
+            '检查已上传分片'
+        );
+
+
+        /* =========================
+           上传分片
+        ========================= */
+
+        for (
+            let index = 0;
+            index < totalChunks;
+            index++
+        ) {
+
+            /*
+             * 已经存在就跳过
+             */
+
+            if (
+                uploaded.some(
+                    x =>
+                        Number(
+                            x.index
+                        ) === index
+                )
+            ) {
+
+                continue;
+            }
+
+
+            const start =
+                index *
+                realChunkSize;
+
+            const end =
+                Math.min(
+                    start +
+                    realChunkSize,
+                    file.size
+                );
+
+
+            const chunk =
+                file.slice(
+                    start,
+                    end
+                );
+
+
+            setStatus(
+                `正在上传第 ${index + 1} / ${totalChunks} 个分片`
+            );
+
+
+            const response =
+                await request(
+                    `/api/upload/${encodeURIComponent(uploadId)}/chunk?index=${index}`,
+                    {
+                        method:
+                            'POST',
+
+                        headers:
+                            {
+                                'Content-Type':
+                                    'application/octet-stream',
+
+                                'X-Upload-Id':
+                                    uploadId
+                            },
+
+                        body:
+                            chunk
+                    }
+                );
+
+
+            if (!response.ok) {
+
+                throw new Error(
+                    response.error ||
+                    `第 ${index + 1} 个分片上传失败`
+                );
+            }
+
+
+            uploadedBytes +=
+                chunk.size;
+
+
+            updateProgress(
+                uploadedBytes,
+                file.size,
+                `正在上传第 ${index + 1} / ${totalChunks} 个分片`
+            );
+
+
+            /*
+             * 最后一个分片时，
+             * Node 后端会立即返回 m3u8。
+             */
+
+            if (
+                response.done === true &&
+                response.m3u8
+            ) {
+
+                showM3U8(
+                    response.m3u8
+                );
+
+                setStatus(
+                    '上传完成，M3U8 地址已生成'
+                );
+            }
+        }
+
+
+        /*
+         * 如果由于断点续传，
+         * 最后一个分片之前已经存在，
+         * 再请求一次 status。
+         */
+
+        const state =
+            await getStatus(
+                uploadId
+            );
+
+
+        if (
+            state &&
+            state.m3u8
+        ) {
+
+            showM3U8(
+                state.m3u8
+            );
+        }
+
+
+        updateProgress(
+            file.size,
+            file.size,
+            '上传完成'
+        );
+
+
+        setStatus(
+            '视频上传完成，后台正在处理视频'
+        );
+
+
+    } catch (e) {
+
+        setStatus(
+            '上传失败：' +
+            e.message
+        );
+
+    } finally {
+
+        uploading =
+            false;
+
+        updateButton();
+    }
+}
+
+
+/* =========================================================
+   远程视频 URL
+========================================================= */
+
+async function uploadRemote(
+    url
+) {
+
+    uploading =
+        true;
+
+    updateButton();
+
+    resetResult();
+
+    progressWrap.classList.add(
+        'show'
+    );
+
+    progressInner.style.width =
+        '0%';
+
+    progressPercent.textContent =
+        '远程';
+
+    progressText.textContent =
+        '正在提交';
+
+    setStatus(
+        '正在提交视频链接...'
+    );
+
+
+    try {
+
+        let filename =
+            getFilenameFromUrl(
+                url
+            );
+
+
+        if (!filename) {
+
+            filename =
+                'remote.mp4';
+        }
+
+
+        const response =
+            await request(
+                '/api/url',
+                {
+                    method:
+                        'POST',
+
+                    headers:
+                        {
+                            'Content-Type':
+                                'application/json'
+                        },
+
+                    body:
+                        JSON.stringify(
+                            {
+                                url:
+                                    url,
+
+                                filename:
+                                    filename
+                            }
+                        )
+                }
+            );
+
+
+        if (!response.ok) {
+
+            throw new Error(
+                response.error ||
+                '提交失败'
+            );
+        }
+
+
+        /*
+         * 后端这里会立即返回：
+         *
+         * {
+         *   ok:true,
+         *   uploadId,
+         *   m3u8
+         * }
+         *
+         * 不等待远程下载和 FFmpeg。
+         */
+
+        if (
+            response.m3u8
+        ) {
+
+            showM3U8(
+                response.m3u8
+            );
+        }
+
+
+        progressInner.style.width =
+            '100%';
+
+        progressPercent.textContent =
+            '已提交';
+
+        progressText.textContent =
+            '任务已提交';
+
+
+        setStatus(
+            '视频链接已提交，后台正在下载并处理'
+        );
+
+
+    } catch (e) {
+
+        setStatus(
+            '提交失败：' +
+            e.message
+        );
+
+    } finally {
+
+        uploading =
+            false;
+
+        updateButton();
+    }
+}
+
+
+/* =========================================================
+   获取已上传分片
+========================================================= */
+
+async function getUploadedChunks(
+    uploadId
+) {
+
+    try {
+
+        const data =
+            await getStatus(
+                uploadId
+            );
+
+        return data?.uploaded ||
+            [];
+
+    } catch {
+
+        return [];
+    }
+}
+
+
+/* =========================================================
+   STATUS
+========================================================= */
+
+async function getStatus(
+    uploadId
+) {
+
+    return request(
+        `/api/upload/${encodeURIComponent(uploadId)}/status`,
+        {
+            method:
+                'GET'
+        }
+    );
+}
+
+
+/* =========================================================
+   显示 M3U8
+========================================================= */
+
+function showM3U8(
+    url
+) {
+
+    if (!url) return;
+
+    m3u8Url.textContent =
+        url;
+
+    result.classList.add(
+        'show'
+    );
+}
+
+
+/* =========================================================
+   复制 M3U8
+========================================================= */
+
+copyBtn.addEventListener(
+    'click',
+    async () => {
+
+        const value =
+            m3u8Url.textContent.trim();
+
+        if (!value) return;
+
+        try {
+
+            await navigator.clipboard.writeText(
+                value
+            );
+
+            copyBtn.textContent =
+                '已复制';
+
+            setTimeout(
+                () => {
+
+                    copyBtn.textContent =
+                        '复制';
+
+                },
+                1200
+            );
+
+        } catch {
+
+            /*
+             * 兼容部分旧浏览器
+             */
+
+            const textarea =
+                document.createElement(
+                    'textarea'
+                );
+
+            textarea.value =
+                value;
+
+            document.body.appendChild(
+                textarea
+            );
+
+            textarea.select();
+
+            document.execCommand(
+                'copy'
+            );
+
+            textarea.remove();
+
+            copyBtn.textContent =
+                '已复制';
+
+            setTimeout(
+                () => {
+
+                    copyBtn.textContent =
+                        '复制';
+
+                },
+                1200
+            );
+        }
+    }
+);
+
+
+/* =========================================================
+   HTTP 请求
+========================================================= */
+
+async function request(
+    path,
+    options = {}
+) {
+
+    const response =
+        await fetch(
+            API_BASE + path,
+            options
+        );
+
+
+    const text =
+        await response.text();
+
+
+    let data;
+
+    try {
+
+        data =
+            JSON.parse(
+                text
+            );
+
+    } catch {
+
+        throw new Error(
+            `服务器返回异常 HTTP ${response.status}`
+        );
+    }
+
+
+    if (
+        !response.ok
+    ) {
+
+        throw new Error(
+            data.error ||
+            `HTTP ${response.status}`
+        );
+    }
+
+
+    return data;
+}
+
+
+/* =========================================================
+   进度
+========================================================= */
+
+function updateProgress(
+    current,
+    total,
+    text
+) {
+
+    let percent =
+        0;
+
+    if (
+        total > 0
+    ) {
+
+        percent =
+            Math.floor(
+                current /
+                total *
+                100
+            );
+    }
+
+
+    percent =
+        Math.max(
+            0,
+            Math.min(
+                100,
+                percent
+            )
+        );
+
+
+    progressInner.style.width =
+        percent + '%';
+
+    progressPercent.textContent =
+        percent + '%';
+
+    progressText.textContent =
+        text || '上传中';
+}
+
+
+/* =========================================================
+   状态文字
+========================================================= */
+
+function setStatus(
+    text
+) {
+
+    status.textContent =
+        text || '';
+}
+
+
+/* =========================================================
+   重置结果
+========================================================= */
+
+function resetResult() {
+
+    result.classList.remove(
+        'show'
+    );
+
+    m3u8Url.textContent =
+        '';
+
+    progressInner.style.width =
+        '0%';
+
+    progressPercent.textContent =
+        '0%';
+
+    progressText.textContent =
+        '准备上传';
+
+    status.textContent =
+        '';
+}
+
+
+/* =========================================================
+   文件大小
+========================================================= */
+
+function formatBytes(
+    bytes
+) {
+
+    if (
+        bytes === 0
+    ) {
+
+        return '0 B';
+    }
+
+
+    const units =
+        [
+            'B',
+            'KB',
+            'MB',
+            'GB',
+            'TB'
+        ];
+
+
+    const i =
+        Math.floor(
+            Math.log(bytes) /
+            Math.log(1024)
+        );
+
+
+    return (
+        bytes /
+        Math.pow(
+            1024,
+            i
+        )
+    ).toFixed(
+        i === 0
+            ? 0
+            : 2
+    ) +
+    ' ' +
+    units[i];
+}
+
+
+/* =========================================================
+   从 URL 获取文件名
+========================================================= */
+
+function getFilenameFromUrl(
+    value
+) {
+
+    try {
+
+        const u =
+            new URL(
+                value
+            );
+
+        const pathname =
+            u.pathname;
+
+        const name =
+            pathname
+                .split('/')
+                .pop();
+
+
+        if (
+            name &&
+            name.includes('.')
+        ) {
+
+            return decodeURIComponent(
+                name
+            );
+        }
+
+    } catch {}
+
+
+    return 'remote.mp4';
+}
+
+
+/* =========================================================
+   初始化
+========================================================= */
+
+updateButton();
+
+</script></body>
+</html>

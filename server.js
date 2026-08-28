@@ -5,39 +5,131 @@ const path = require('path');
 const crypto = require('crypto');
 const { spawn } = require('child_process');
 const { URL } = require('url');
+const zlib = require('zlib');
 
 /* =========================================================
    基础配置
    ========================================================= */
 
-const HOST = process.env.HOST || '0.0.0.0';
-const PORT = Number(process.env.PORT || 8080);
+const HOST =
+  process.env.HOST || '0.0.0.0';
+
+const PORT =
+  Number(process.env.PORT || 8080);
 
 const PUBLIC_BASE =
   process.env.PUBLIC_BASE ||
-  `http://127.0.0.1:${PORT}`;
+  'http://51.15.184.22:4941';
+
+
+/* =========================================================
+   数据目录
+   ========================================================= */
 
 const ROOT =
   process.env.DATA_DIR ||
   path.join(__dirname, 'data');
 
-const TMP = path.join(ROOT, 'tmp');
-const OUT = path.join(ROOT, 'output');
+
+/*
+ * 上传临时目录
+ *
+ * 分片、merged.mp4、meta.json
+ */
+const TMP =
+  path.join(
+    ROOT,
+    'tmp'
+  );
+
+
+/*
+ * FFmpeg 工作区
+ *
+ * FFmpeg 产生：
+ *
+ * seg_000000.ts
+ * seg_000001.ts
+ * ffmpeg.m3u8
+ *
+ * 这些都只存在这里。
+ */
+const OUT =
+  path.join(
+    ROOT,
+    'output'
+  );
+
+
+/*
+ * 最终 HLS 播放目录
+ *
+ * 播放器最终访问：
+ *
+ * /hls/{uploadId}/playlist.m3u8
+ *
+ * 这里只保存最终 playlist.m3u8
+ */
+const HLS =
+  path.join(
+    ROOT,
+    'hls'
+  );
+
+
+/*
+ * 链接记录
+ */
+const LINKS_DIR =
+  path.join(
+    ROOT,
+    'links'
+  );
+
+const LINKS_FILE =
+  path.join(
+    LINKS_DIR,
+    'links.json'
+  );
+
+
+/* =========================================================
+   前端
+   ========================================================= */
+
+const PUBLIC_DIR =
+  path.join(
+    __dirname,
+    'public'
+  );
+
+const INDEX_FILE =
+  path.join(
+    PUBLIC_DIR,
+    'index.html'
+  );
+
+
+/* =========================================================
+   参数
+   ========================================================= */
 
 const CHUNK_SIZE =
   4 * 1024 * 1024;
 
 const MAX_BODY =
-  CHUNK_SIZE + 1024 * 1024;
+  CHUNK_SIZE +
+  1024 * 1024;
 
-const HLS_TIME = 6;
+const HLS_TIME =
+  6;
 
 const MAX_VIDEO_SIZE =
   2 * 1024 * 1024 * 1024;
 
 
 /* =========================================================
-   有赞 / 七牛配置
+   有赞 / 七牛
    ========================================================= */
 
 const YOUZAN_TOKEN_URL =
@@ -46,15 +138,9 @@ const YOUZAN_TOKEN_URL =
 const QINIU_UPLOAD_URL =
   'https://up.qbox.me/';
 
-
-/*
- * 有赞请求头
- *
- * 按你原来的 PHP 保留。
- */
-
 const YOUZAN_HEADERS = {
-  'Host':
+
+  Host:
     'shop92519496.youzan.com',
 
   'x-yz-action-id':
@@ -64,10 +150,10 @@ const YOUZAN_HEADERS = {
   'User-Agent':
     'Mozilla/5.0 (Linux; Android 16; 24129RT7CC Build/BP2A.250605.031.A3; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/141.0.7390.122 Mobile Safari/537.36',
 
-  'Referer':
+  Referer:
     'https://shop92519496.youzan.com/v3/im/index?c=wsc&v=2&o=https%3A%2F%2Fshop92519496.youzan.com%2F&kdt_id=92327328&type=default&fromSource=%7B%22kdt_id%22%3A%2292327328%22%2C%22source%22%3A%22default%22%2C%22endpoint%22%3A%22h5%22%2C%22site_id%22%3A0%7D&reft=1705939714700&spm=f.90337278',
 
-  'Accept':
+  Accept:
     'application/json, text/plain, */*',
 
   'X-Requested-With':
@@ -76,7 +162,7 @@ const YOUZAN_HEADERS = {
 
 
 /* =========================================================
-   目录
+   目录初始化
    ========================================================= */
 
 async function ensureDirs() {
@@ -94,6 +180,36 @@ async function ensureDirs() {
       recursive: true
     }
   );
+
+  await fsp.mkdir(
+    HLS,
+    {
+      recursive: true
+    }
+  );
+
+  await fsp.mkdir(
+    LINKS_DIR,
+    {
+      recursive: true
+    }
+  );
+
+
+  try {
+
+    await fsp.access(
+      LINKS_FILE
+    );
+
+  } catch {
+
+    await fsp.writeFile(
+      LINKS_FILE,
+      '[]\n',
+      'utf8'
+    );
+  }
 }
 
 
@@ -109,6 +225,7 @@ function json(
 
   const body =
     JSON.stringify(obj);
+
 
   res.writeHead(
     status,
@@ -126,11 +243,17 @@ function json(
         'Content-Type, X-Upload-Id',
 
       'Access-Control-Allow-Methods':
-        'GET,POST,OPTIONS'
+        'GET,POST,OPTIONS',
+
+      'Cache-Control':
+        'no-store'
     }
   );
 
-  res.end(body);
+
+  res.end(
+    body
+  );
 }
 
 
@@ -156,11 +279,178 @@ function text(
         '*',
 
       'Cache-Control':
-        'no-cache'
+        'no-cache, no-store'
     }
   );
 
-  res.end(body);
+
+  res.end(
+    body
+  );
+}
+
+
+/* =========================================================
+   MIME
+   ========================================================= */
+
+function mimeType(
+  file
+) {
+
+  const ext =
+    path
+      .extname(file)
+      .toLowerCase();
+
+  const types = {
+
+    '.html':
+      'text/html; charset=utf-8',
+
+    '.css':
+      'text/css; charset=utf-8',
+
+    '.js':
+      'application/javascript; charset=utf-8',
+
+    '.json':
+      'application/json; charset=utf-8',
+
+    '.png':
+      'image/png',
+
+    '.jpg':
+      'image/jpeg',
+
+    '.jpeg':
+      'image/jpeg',
+
+    '.gif':
+      'image/gif',
+
+    '.svg':
+      'image/svg+xml',
+
+    '.webp':
+      'image/webp',
+
+    '.ico':
+      'image/x-icon',
+
+    '.mp4':
+      'video/mp4',
+
+    '.m3u8':
+      'application/vnd.apple.mpegurl',
+
+    '.ts':
+      'video/mp2t'
+  };
+
+  return (
+    types[ext] ||
+    'application/octet-stream'
+  );
+}
+
+
+/* =========================================================
+   Public 文件
+   ========================================================= */
+
+async function servePublicFile(
+  relative,
+  res
+) {
+
+  const base =
+    path.resolve(
+      PUBLIC_DIR
+    );
+
+  const file =
+    path.resolve(
+      PUBLIC_DIR,
+      relative
+    );
+
+
+  if (
+    !(
+      file === base ||
+      file.startsWith(
+        base +
+        path.sep
+      )
+    )
+  ) {
+
+    return text(
+      res,
+      403,
+      'forbidden'
+    );
+  }
+
+
+  try {
+
+    const stat =
+      await fsp.stat(
+        file
+      );
+
+
+    if (
+      !stat.isFile()
+    ) {
+
+      return text(
+        res,
+        404,
+        'not found'
+      );
+    }
+
+
+    res.writeHead(
+      200,
+      {
+        'Content-Type':
+          mimeType(file),
+
+        'Content-Length':
+          stat.size,
+
+        'Cache-Control':
+          relative === 'index.html'
+            ? 'no-cache, no-store, must-revalidate'
+            : 'public, max-age=3600',
+
+        'Access-Control-Allow-Origin':
+          '*'
+      }
+    );
+
+
+    fs.createReadStream(
+      file
+    ).pipe(
+      res
+    );
+
+
+    return true;
+
+  } catch {
+
+    return text(
+      res,
+      404,
+      'not found'
+    );
+  }
 }
 
 
@@ -168,7 +458,9 @@ function text(
    文件名安全
    ========================================================= */
 
-function safeName(name) {
+function safeName(
+  name
+) {
 
   name =
     path.basename(
@@ -178,14 +470,19 @@ function safeName(name) {
       )
     );
 
+
   name =
     name.replace(
       /[^\w.\-()+\u4e00-\u9fff ]/g,
       '_'
     );
 
+
   return (
-    name.slice(0, 180) ||
+    name.slice(
+      0,
+      180
+    ) ||
     'video.mp4'
   );
 }
@@ -223,10 +520,56 @@ function uploadDir(
 
 
 /* =========================================================
-   JSON 文件
+   工作目录
    ========================================================= */
 
-async function readJson(file) {
+function outputDir(
+  uploadId
+) {
+
+  return path.join(
+    OUT,
+    uploadId
+  );
+}
+
+
+/* =========================================================
+   最终 HLS 目录
+   ========================================================= */
+
+function hlsDir(
+  uploadId
+) {
+
+  return path.join(
+    HLS,
+    uploadId
+  );
+}
+
+
+/* =========================================================
+   HLS URL
+   ========================================================= */
+
+function hlsUrl(
+  uploadId
+) {
+
+  return (
+    `${PUBLIC_BASE}/hls/${uploadId}/playlist.m3u8`
+  );
+}
+
+
+/* =========================================================
+   JSON 读取
+   ========================================================= */
+
+async function readJson(
+  file
+) {
 
   try {
 
@@ -244,6 +587,10 @@ async function readJson(file) {
 }
 
 
+/* =========================================================
+   JSON 写入
+   ========================================================= */
+
 async function writeJson(
   file,
   obj
@@ -255,8 +602,129 @@ async function writeJson(
       obj,
       null,
       2
-    )
+    ),
+    'utf8'
   );
+}
+
+
+/* =========================================================
+   保存链接
+   ========================================================= */
+
+async function saveLink(
+  m3u8,
+  source
+) {
+
+  try {
+
+    if (
+      !m3u8
+    ) {
+
+      return;
+    }
+
+
+    let list = [];
+
+
+    try {
+
+      list =
+        JSON.parse(
+          await fsp.readFile(
+            LINKS_FILE,
+            'utf8'
+          )
+        );
+
+    } catch {
+
+      list = [];
+    }
+
+
+    if (
+      !Array.isArray(list)
+    ) {
+
+      list = [];
+    }
+
+
+    m3u8 =
+      String(
+        m3u8
+      );
+
+    source =
+      String(
+        source ||
+        ''
+      );
+
+
+    const index =
+      list.indexOf(
+        m3u8
+      );
+
+
+    if (
+      index !== -1
+    ) {
+
+      if (
+        index + 1 <
+        list.length
+      ) {
+
+        list[index + 1] =
+          source;
+
+      } else {
+
+        list.push(
+          source
+        );
+      }
+
+    } else {
+
+      list.push(
+        m3u8
+      );
+
+      list.push(
+        source
+      );
+    }
+
+
+    await fsp.writeFile(
+      LINKS_FILE,
+      JSON.stringify(
+        list,
+        null,
+        2
+      ) + '\n',
+      'utf8'
+    );
+
+
+    console.log(
+      `[链接记录] ${m3u8}`
+    );
+
+  } catch (e) {
+
+    console.error(
+      '[链接记录失败]',
+      e.message
+    );
+  }
 }
 
 
@@ -290,35 +758,46 @@ function run(
           }
         );
 
+
       let out = '';
       let err = '';
+
 
       p.stdout.on(
         'data',
         d => {
+
           out +=
             d.toString();
+
         }
       );
+
 
       p.stderr.on(
         'data',
         d => {
+
           err +=
             d.toString();
+
         }
       );
+
 
       p.on(
         'error',
         reject
       );
 
+
       p.on(
         'close',
         code => {
 
-          if (code === 0) {
+          if (
+            code === 0
+          ) {
 
             resolve({
               out,
@@ -341,71 +820,67 @@ function run(
 
 
 /* =========================================================
-   后台执行 FFmpeg
+   FFmpeg
    ========================================================= */
 
-function spawnLogged(
+function spawnFFmpeg(
   cmd,
-  args,
-  logFile
+  args
 ) {
 
-  const log =
-    fs.createWriteStream(
-      logFile,
-      {
-        flags: 'a'
-      }
-    );
-
-  const p =
-    spawn(
-      cmd,
-      args,
-      {
-        stdio: [
-          'ignore',
-          'pipe',
-          'pipe'
-        ]
-      }
-    );
-
-  p.stdout.pipe(log);
-  p.stderr.pipe(log);
-
-  p.on(
-    'close',
-    () => log.end()
+  return spawn(
+    cmd,
+    args,
+    {
+      stdio: [
+        'ignore',
+        'ignore',
+        'ignore'
+      ]
+    }
   );
-
-  return p;
 }
 
 
 /* =========================================================
-   创建初始 M3U8
+   创建最终 HLS M3U8
    ========================================================= */
 
-async function createPlaceholderM3U8(
-  dir
+async function createHlsPlaylist(
+  uploadId
 ) {
 
-  const file =
+  const dir =
+    hlsDir(
+      uploadId
+    );
+
+
+  await fsp.mkdir(
+    dir,
+    {
+      recursive: true
+    }
+  );
+
+
+  const playlist =
     path.join(
       dir,
       'playlist.m3u8'
     );
 
+
   try {
 
     await fsp.access(
-      file
+      playlist
     );
 
     return;
 
   } catch {}
+
 
   const body =
     '#EXTM3U\n' +
@@ -413,15 +888,17 @@ async function createPlaceholderM3U8(
     '#EXT-X-TARGETDURATION:6\n' +
     '#EXT-X-MEDIA-SEQUENCE:0\n';
 
+
   await fsp.writeFile(
-    file,
-    body
+    playlist,
+    body,
+    'utf8'
   );
 }
 
 
 /* =========================================================
-   初始化分片上传
+   初始化上传
    ========================================================= */
 
 async function initUpload(
@@ -431,10 +908,18 @@ async function initUpload(
   const uploadId =
     id();
 
+
   const dir =
     uploadDir(
       uploadId
     );
+
+
+  const outDir =
+    outputDir(
+      uploadId
+    );
+
 
   await fsp.mkdir(
     dir,
@@ -442,6 +927,26 @@ async function initUpload(
       recursive: true
     }
   );
+
+
+  await fsp.mkdir(
+    outDir,
+    {
+      recursive: true
+    }
+  );
+
+
+  await createHlsPlaylist(
+    uploadId
+  );
+
+
+  const filename =
+    safeName(
+      meta.filename
+    );
+
 
   await writeJson(
     path.join(
@@ -452,10 +957,7 @@ async function initUpload(
       id:
         uploadId,
 
-      filename:
-        safeName(
-          meta.filename
-        ),
+      filename,
 
       size:
         Number(
@@ -477,6 +979,40 @@ async function initUpload(
         'uploading'
     }
   );
+
+
+  await writeJson(
+    path.join(
+      outDir,
+      'status.json'
+    ),
+    {
+      status:
+        'uploading',
+
+      uploadId,
+
+      filename,
+
+      createdAt:
+        Date.now(),
+
+      m3u8:
+        hlsUrl(uploadId)
+    }
+  );
+
+
+  /*
+   * 注意：
+   *
+   * 现在记录的是最终 HLS 地址
+   */
+  await saveLink(
+    hlsUrl(uploadId),
+    filename
+  );
+
 
   return uploadId;
 }
@@ -515,7 +1051,9 @@ async function uploadedChunks(
       uploadId
     );
 
+
   const list = [];
+
 
   for (
     let i = 0;
@@ -533,6 +1071,7 @@ async function uploadedChunks(
           )
         );
 
+
       list.push(
         {
           index:
@@ -545,6 +1084,7 @@ async function uploadedChunks(
 
     } catch {}
   }
+
 
   return list;
 }
@@ -564,11 +1104,13 @@ async function mergeParts(
       uploadId
     );
 
+
   const work =
     path.join(
       dir,
       'merged.mp4'
     );
+
 
   try {
 
@@ -576,6 +1118,7 @@ async function mergeParts(
       await fsp.stat(
         work
       );
+
 
     if (
       st.size > 0 &&
@@ -588,11 +1131,13 @@ async function mergeParts(
 
   } catch {}
 
+
   const fh =
     await fsp.open(
       work,
       'w'
     );
+
 
   try {
 
@@ -608,10 +1153,12 @@ async function mergeParts(
           `${i}.part`
         );
 
+
       const data =
         await fsp.readFile(
           part
         );
+
 
       await fh.write(
         data
@@ -623,76 +1170,14 @@ async function mergeParts(
     await fh.close();
   }
 
+
   return work;
 }
 
 
 /* =========================================================
-   生成 125 字节真实 PNG
-   =========================================================
-
-   这里生成的是一个合法 PNG：
-
-   PNG Signature
-   IHDR
-   IDAT
-   tEXt
-   IEND
-
-   总大小严格 125 字节。
-
-   每次随机生成不同的 Comment 内容，
-   所以每次 PNG 二进制都会不同。
+   PNG CRC32
    ========================================================= */
-
-function pngChunk(
-  type,
-  data
-) {
-
-  const typeBuffer =
-    Buffer.from(
-      type,
-      'ascii'
-    );
-
-  const length =
-    Buffer.alloc(4);
-
-  length.writeUInt32BE(
-    data.length,
-    0
-  );
-
-  const crc =
-    Buffer.alloc(4);
-
-  crc.writeUInt32BE(
-    crc32(
-      Buffer.concat(
-        [
-          typeBuffer,
-          data
-        ]
-      )
-    ) >>> 0,
-    0
-  );
-
-  return Buffer.concat(
-    [
-      length,
-      typeBuffer,
-      data,
-      crc
-    ]
-  );
-}
-
-
-/*
- * CRC32
- */
 
 function crc32(
   buffer
@@ -700,6 +1185,7 @@ function crc32(
 
   let crc =
     0xffffffff;
+
 
   for (
     let i = 0;
@@ -709,6 +1195,7 @@ function crc32(
 
     crc ^=
       buffer[i];
+
 
     for (
       let j = 0;
@@ -727,6 +1214,7 @@ function crc32(
     }
   }
 
+
   return (
     crc ^
     0xffffffff
@@ -734,9 +1222,63 @@ function crc32(
 }
 
 
-/*
- * 生成固定 125 字节 PNG
- */
+/* =========================================================
+   PNG Chunk
+   ========================================================= */
+
+function pngChunk(
+  type,
+  data
+) {
+
+  const typeBuffer =
+    Buffer.from(
+      type,
+      'ascii'
+    );
+
+
+  const length =
+    Buffer.alloc(4);
+
+
+  length.writeUInt32BE(
+    data.length,
+    0
+  );
+
+
+  const crc =
+    Buffer.alloc(4);
+
+
+  crc.writeUInt32BE(
+    crc32(
+      Buffer.concat(
+        [
+          typeBuffer,
+          data
+        ]
+      )
+    ) >>> 0,
+    0
+  );
+
+
+  return Buffer.concat(
+    [
+      length,
+      typeBuffer,
+      data,
+      crc
+    ]
+  );
+}
+
+
+/* =========================================================
+   125 字节 PNG
+   ========================================================= */
 
 function create125BytePNG() {
 
@@ -754,35 +1296,32 @@ function create125BytePNG() {
       ]
     );
 
-  /*
-   * 1x1 RGB PNG
-   */
 
   const ihdrData =
     Buffer.alloc(
       13
     );
 
+
   ihdrData.writeUInt32BE(
     1,
     0
   );
+
 
   ihdrData.writeUInt32BE(
     1,
     4
   );
 
-  /*
-   * bit depth = 8
-   * color type = 2 RGB
-   */
 
   ihdrData[8] =
     8;
 
+
   ihdrData[9] =
     2;
+
 
   ihdrData[10] =
     0;
@@ -793,16 +1332,13 @@ function create125BytePNG() {
   ihdrData[12] =
     0;
 
+
   const ihdr =
     pngChunk(
       'IHDR',
       ihdrData
     );
 
-
-  /*
-   * 一个黑色像素
-   */
 
   const rawPixel =
     Buffer.from(
@@ -814,11 +1350,12 @@ function create125BytePNG() {
       ]
     );
 
+
   const compressed =
-    require('zlib')
-      .deflateSync(
-        rawPixel
-      );
+    zlib.deflateSync(
+      rawPixel
+    );
+
 
   const idat =
     pngChunk(
@@ -826,16 +1363,6 @@ function create125BytePNG() {
       compressed
     );
 
-
-  /*
-   * tEXt：
-   *
-   * Comment
-   * +
-   * 36 字节随机 ASCII
-   *
-   * 这样总长度刚好为 125 字节。
-   */
 
   const randomText =
     crypto
@@ -854,11 +1381,13 @@ function create125BytePNG() {
         36
       );
 
+
   const textData =
     Buffer.from(
       `Comment\0${randomText}`,
       'latin1'
     );
+
 
   const textChunk =
     pngChunk(
@@ -886,25 +1415,22 @@ function create125BytePNG() {
     );
 
 
-  /*
-   * 安全检查。
-   */
-
   if (
     png.length !== 125
   ) {
 
     throw new Error(
-      `PNG生成错误：${png.length} 字节，不是125字节`
+      `PNG生成错误：${png.length} 字节`
     );
   }
+
 
   return png;
 }
 
 
 /* =========================================================
-   获取有赞 Token
+   有赞 Token
    ========================================================= */
 
 async function getYouzanToken() {
@@ -921,33 +1447,38 @@ async function getYouzanToken() {
       }
     );
 
-  const text =
+
+  const responseText =
     await response.text();
+
 
   if (
     !response.ok
   ) {
 
     throw new Error(
-      `有赞 Token HTTP ${response.status}: ${text}`
+      `有赞 Token HTTP ${response.status}`
     );
   }
 
+
   let data;
+
 
   try {
 
     data =
       JSON.parse(
-        text
+        responseText
       );
 
   } catch {
 
     throw new Error(
-      `有赞 Token 返回不是JSON：${text}`
+      '有赞 Token 返回不是 JSON'
     );
   }
+
 
   if (
     !data ||
@@ -955,21 +1486,24 @@ async function getYouzanToken() {
   ) {
 
     throw new Error(
-      `有赞 Token 获取失败：${text}`
+      '有赞 Token 获取失败'
     );
   }
 
+
   const token =
     data.data;
+
 
   if (
     !token
   ) {
 
     throw new Error(
-      `有赞没有返回token：${text}`
+      '有赞没有返回 token'
     );
   }
+
 
   return String(
     token
@@ -978,15 +1512,27 @@ async function getYouzanToken() {
 
 
 /* =========================================================
-   构造七牛 multipart
+   七牛上传 TS
    ========================================================= */
 
-function createQiniuMultipart(
-  token,
-  fileName,
-  pngBuffer,
-  tsPath
+async function uploadTsToQiniu(
+  tsPath,
+  originalName
 ) {
+
+  const token =
+    await getYouzanToken();
+
+
+  const pngBuffer =
+    create125BytePNG();
+
+
+  const fileName =
+    path.basename(
+      originalName
+    );
+
 
   const boundary =
     '----NodeQiniu' +
@@ -994,10 +1540,6 @@ function createQiniuMultipart(
       .randomBytes(16)
       .toString('hex');
 
-
-  /*
-   * token
-   */
 
   const tokenPart =
     Buffer.from(
@@ -1008,18 +1550,6 @@ function createQiniuMultipart(
       'utf8'
     );
 
-
-  /*
-   * 文件。
-   *
-   * 这里非常重要：
-   *
-   * pngBuffer
-   * ↓
-   * TS
-   *
-   * 两者是同一个 multipart file。
-   */
 
   const fileHeader =
     Buffer.from(
@@ -1038,113 +1568,23 @@ function createQiniuMultipart(
     );
 
 
-  const tsStatPromise =
-    fsp.stat(
-      tsPath
-    );
-
-
-  return {
-    boundary,
-    tokenPart,
-    fileHeader,
-    pngBuffer,
-    footer,
-    tsStatPromise
-  };
-}
-
-
-/* =========================================================
-   上传：
-   125字节PNG + TS
-   到七牛
-   ========================================================= */
-
-async function uploadTsToQiniu(
-  tsPath,
-  originalName
-) {
-
-  /*
-   * 1.
-   * 获取有赞 token
-   */
-
-  const token =
-    await getYouzanToken();
-
-
-  /*
-   * 2.
-   * 创建 125 字节 PNG
-   */
-
-  const pngBuffer =
-    create125BytePNG();
-
-
-  /*
-   * 3.
-   * 文件名
-   *
-   * 仍然使用 TS 名称，
-   * 但文件内容实际上是：
-   *
-   * PNG125 + TS
-   */
-
-  const fileName =
-    path.basename(
-      originalName
-    );
-
-
-  /*
-   * 4.
-   * Multipart
-   */
-
-  const multipart =
-    createQiniuMultipart(
-      token,
-      fileName,
-      pngBuffer,
-      tsPath
-    );
-
-
   const tsStat =
-    await multipart.tsStatPromise;
+    await fsp.stat(
+      tsPath
+    );
 
-
-  /*
-   * 最终文件内容长度：
-   *
-   * PNG 125
-   * +
-   * TS
-   */
 
   const combinedLength =
     pngBuffer.length +
     tsStat.size;
 
 
-  /*
-   * 整个 HTTP body 长度
-   */
-
   const totalLength =
-    multipart.tokenPart.length +
-    multipart.fileHeader.length +
+    tokenPart.length +
+    fileHeader.length +
     combinedLength +
-    multipart.footer.length;
+    footer.length;
 
-
-  /*
-   * TS Stream
-   */
 
   const tsStream =
     fs.createReadStream(
@@ -1152,47 +1592,25 @@ async function uploadTsToQiniu(
     );
 
 
-  /*
-   * 构造 ReadableStream
-   */
-
   const stream =
     new ReadableStream(
       {
         start(controller) {
 
-          /*
-           * token
-           */
-
           controller.enqueue(
-            multipart.tokenPart
+            tokenPart
           );
 
 
-          /*
-           * 文件头
-           */
-
           controller.enqueue(
-            multipart.fileHeader
+            fileHeader
           );
 
 
-          /*
-           * 关键：
-           *
-           * PNG 放在最前面。
-           */
-
           controller.enqueue(
-            multipart.pngBuffer
+            pngBuffer
           );
 
-
-          /*
-           * 然后是 TS。
-           */
 
           tsStream.on(
             'data',
@@ -1210,7 +1628,7 @@ async function uploadTsToQiniu(
             () => {
 
               controller.enqueue(
-                multipart.footer
+                footer
               );
 
               controller.close();
@@ -1229,6 +1647,7 @@ async function uploadTsToQiniu(
           );
         },
 
+
         cancel() {
 
           tsStream.destroy();
@@ -1236,11 +1655,6 @@ async function uploadTsToQiniu(
       }
     );
 
-
-  /*
-   * 5.
-   * 上传七牛
-   */
 
   const response =
     await fetch(
@@ -1252,7 +1666,7 @@ async function uploadTsToQiniu(
         headers:
           {
             'Content-Type':
-              `multipart/form-data; boundary=${multipart.boundary}`,
+              `multipart/form-data; boundary=${boundary}`,
 
             'Content-Length':
               String(
@@ -1281,12 +1695,13 @@ async function uploadTsToQiniu(
   ) {
 
     throw new Error(
-      `七牛 HTTP ${response.status}: ${resultText}`
+      `七牛 HTTP ${response.status}`
     );
   }
 
 
   let result;
+
 
   try {
 
@@ -1298,18 +1713,10 @@ async function uploadTsToQiniu(
   } catch {
 
     throw new Error(
-      `七牛返回不是JSON：${resultText}`
+      '七牛返回不是 JSON'
     );
   }
 
-
-  /*
-   * PHP 原代码：
-   *
-   * $json['data']['attachment_url']
-   * $json['data']['attachment_full_url']
-   * $json['attachment_url']
-   */
 
   const url =
     result?.data?.attachment_url ||
@@ -1323,49 +1730,75 @@ async function uploadTsToQiniu(
   ) {
 
     throw new Error(
-      `七牛没有返回图片URL：${resultText}`
+      '七牛没有返回图片 URL'
     );
   }
 
 
   return {
+
     url,
+
     pngBytes:
       pngBuffer.length,
+
     tsBytes:
       tsStat.size,
+
     combinedBytes:
-      combinedLength,
-    response:
-      result
+      combinedLength
   };
 }
 
 
 /* =========================================================
-   M3U8
+   最终 HLS M3U8
    ========================================================= */
 
-async function appendSegmentToM3U8(
-  playlist,
+async function appendSegmentToHls(
+  uploadId,
   duration,
   url
 ) {
+
+  const playlist =
+    path.join(
+      hlsDir(
+        uploadId
+      ),
+      'playlist.m3u8'
+    );
+
 
   const line =
     `#EXTINF:${Number(duration).toFixed(6)},\n` +
     `${url}\n`;
 
+
   await fsp.appendFile(
     playlist,
-    line
+    line,
+    'utf8'
   );
 }
 
 
-async function finishM3U8(
-  playlist
+/* =========================================================
+   HLS ENDLIST
+   ========================================================= */
+
+async function finishHls(
+  uploadId
 ) {
+
+  const playlist =
+    path.join(
+      hlsDir(
+        uploadId
+      ),
+      'playlist.m3u8'
+    );
+
 
   try {
 
@@ -1375,6 +1808,7 @@ async function finishM3U8(
         'utf8'
       );
 
+
     if (
       !data.includes(
         '#EXT-X-ENDLIST'
@@ -1383,7 +1817,8 @@ async function finishM3U8(
 
       await fsp.appendFile(
         playlist,
-        '#EXT-X-ENDLIST\n'
+        '#EXT-X-ENDLIST\n',
+        'utf8'
       );
     }
 
@@ -1392,7 +1827,7 @@ async function finishM3U8(
 
 
 /* =========================================================
-   获取 TS duration
+   TS duration
    ========================================================= */
 
 async function getTsDuration(
@@ -1418,10 +1853,12 @@ async function getTsDuration(
         ]
       );
 
+
     const d =
       Number(
         r.out.trim()
       );
+
 
     if (
       Number.isFinite(d) &&
@@ -1433,12 +1870,13 @@ async function getTsDuration(
 
   } catch {}
 
+
   return HLS_TIME;
 }
 
 
 /* =========================================================
-   上传 TS 到七牛
+   上传 TS
    ========================================================= */
 
 async function uploadSegmentsToQiniu(
@@ -1446,11 +1884,29 @@ async function uploadSegmentsToQiniu(
   outDir
 ) {
 
+  /*
+   * 注意：
+   *
+   * playlist 不再放 output
+   *
+   * 而是：
+   *
+   * data/hls/{id}/playlist.m3u8
+   */
+
+  await createHlsPlaylist(
+    uploadId
+  );
+
+
   const playlist =
     path.join(
-      outDir,
+      hlsDir(
+        uploadId
+      ),
       'playlist.m3u8'
     );
+
 
   const stateFile =
     path.join(
@@ -1462,6 +1918,7 @@ async function uploadSegmentsToQiniu(
   const uploaded =
     new Set();
 
+
   let finished =
     false;
 
@@ -1470,10 +1927,20 @@ async function uploadSegmentsToQiniu(
     !finished
   ) {
 
-    const files =
-      await fsp.readdir(
-        outDir
-      );
+    let files;
+
+
+    try {
+
+      files =
+        await fsp.readdir(
+          outDir
+        );
+
+    } catch {
+
+      break;
+    }
 
 
     const tsFiles =
@@ -1509,11 +1976,11 @@ async function uploadSegmentsToQiniu(
 
 
       /*
-       * 判断 FFmpeg 是否已经停止写这个 TS。
+       * 等 TS 文件稳定
        */
-
       let stable =
         false;
+
 
       let previous =
         -1;
@@ -1578,17 +2045,8 @@ async function uploadSegmentsToQiniu(
         );
 
 
-      /*
-       * 上传：
-       *
-       * 125 PNG
-       * +
-       * TS
-       *
-       * 同一个文件。
-       */
-
       let uploadResult;
+
 
       try {
 
@@ -1600,31 +2058,11 @@ async function uploadSegmentsToQiniu(
 
       } catch (e) {
 
-        await writeJson(
-          stateFile,
-          {
-            status:
-              'qiniu_upload_error',
-
-            uploadId,
-
-            error:
-              e.message,
-
-            current:
-              fileName,
-
-            m3u8:
-              `${PUBLIC_BASE}/hls/${uploadId}/playlist.m3u8`
-          }
-        ).catch(
-          () => {}
+        console.error(
+          `[七牛上传失败] ${fileName}`,
+          e.message
         );
 
-
-        /*
-         * 等待后重新上传。
-         */
 
         await new Promise(
           r =>
@@ -1639,11 +2077,13 @@ async function uploadSegmentsToQiniu(
 
 
       /*
-       * 七牛上传成功。
+       * 核心：
+       *
+       * 七牛上传成功后，
+       * 立即把 URL 写入最终 HLS。
        */
-
-      await appendSegmentToM3U8(
-        playlist,
+      await appendSegmentToHls(
+        uploadId,
         duration,
         uploadResult.url
       );
@@ -1655,19 +2095,15 @@ async function uploadSegmentsToQiniu(
 
 
       /*
-       * 上传成功后删除 TS。
+       * TS 已经上传到七牛，
+       * 工作区立即删除。
        */
-
       await fsp.unlink(
         tsPath
       ).catch(
         () => {}
       );
 
-
-      /*
-       * 更新状态。
-       */
 
       await writeJson(
         stateFile,
@@ -1683,31 +2119,23 @@ async function uploadSegmentsToQiniu(
           current:
             fileName,
 
-          lastUrl:
-            uploadResult.url,
-
-          pngBytes:
-            uploadResult.pngBytes,
-
-          tsBytes:
-            uploadResult.tsBytes,
-
-          combinedBytes:
-            uploadResult.combinedBytes,
-
           m3u8:
-            `${PUBLIC_BASE}/hls/${uploadId}/playlist.m3u8`
+            hlsUrl(uploadId)
         }
       ).catch(
         () => {}
+      );
+
+
+      console.log(
+        `[HLS] ${uploadId} → ${fileName}`
       );
     }
 
 
     /*
-     * 判断 FFmpeg 是否结束。
+     * 检查 FFmpeg 是否完成
      */
-
     const ffmpegState =
       await readJson(
         path.join(
@@ -1743,13 +2171,13 @@ async function uploadSegmentsToQiniu(
 
 
   /*
-   * FFmpeg 完成后，
-   * 最后再扫描一次。
+   * FFmpeg 完成后最后扫描
    */
-
   const finalFiles =
     await fsp.readdir(
       outDir
+    ).catch(
+      () => []
     );
 
 
@@ -1791,15 +2219,30 @@ async function uploadSegmentsToQiniu(
       );
 
 
-    const uploadResult =
-      await uploadTsToQiniu(
-        tsPath,
-        fileName
+    let uploadResult;
+
+
+    try {
+
+      uploadResult =
+        await uploadTsToQiniu(
+          tsPath,
+          fileName
+        );
+
+    } catch (e) {
+
+      console.error(
+        `[最终TS上传失败] ${fileName}`,
+        e.message
       );
 
+      continue;
+    }
 
-    await appendSegmentToM3U8(
-      playlist,
+
+    await appendSegmentToHls(
+      uploadId,
       duration,
       uploadResult.url
     );
@@ -1819,45 +2262,30 @@ async function uploadSegmentsToQiniu(
 
 
   /*
-   * 完成 M3U8
+   * 所有 TS 上传完成
+   *
+   * 最终 HLS 封口
    */
-
-  await finishM3U8(
-    playlist
+  await finishHls(
+    uploadId
   );
 
 
   /*
-   * 删除 FFmpeg 日志
+   * 注意：
+   *
+   * status.json 是工作状态文件，
+   * 完成后删除。
    */
-
   await fsp.unlink(
-    path.join(
-      outDir,
-      'ffmpeg.log'
-    )
+    stateFile
   ).catch(
     () => {}
   );
 
 
-  await writeJson(
-    stateFile,
-    {
-      status:
-        'ready',
-
-      uploadId,
-
-      uploadedSegments:
-        uploaded.size,
-
-      endedAt:
-        Date.now(),
-
-      m3u8:
-        `${PUBLIC_BASE}/hls/${uploadId}/playlist.m3u8`
-    }
+  console.log(
+    `[HLS完成] ${hlsUrl(uploadId)}`
   );
 
 
@@ -1876,8 +2304,7 @@ async function transcodeToHls(
 ) {
 
   const outDir =
-    path.join(
-      OUT,
+    outputDir(
       uploadId
     );
 
@@ -1890,30 +2317,33 @@ async function transcodeToHls(
   );
 
 
-  const playlist =
-    path.join(
-      outDir,
-      'playlist.m3u8'
-    );
+  /*
+   * 最终 HLS 播放目录
+   */
+  await createHlsPlaylist(
+    uploadId
+  );
 
 
-  const logFile =
+  /*
+   * 工作区中的 FFmpeg M3U8
+   *
+   * 仅供 FFmpeg 使用。
+   */
+  const ffmpegPlaylist =
     path.join(
       outDir,
-      'ffmpeg.log'
+      'ffmpeg.m3u8'
     );
 
 
   /*
-   * Node 自己维护 M3U8。
+   * 如果旧文件存在，先删除
    */
-
-  await fsp.writeFile(
-    playlist,
-    '#EXTM3U\n' +
-    '#EXT-X-VERSION:3\n' +
-    '#EXT-X-TARGETDURATION:6\n' +
-    '#EXT-X-MEDIA-SEQUENCE:0\n'
+  await fsp.unlink(
+    ffmpegPlaylist
+  ).catch(
+    () => {}
   );
 
 
@@ -1935,21 +2365,17 @@ async function transcodeToHls(
         Date.now(),
 
       m3u8:
-        `${PUBLIC_BASE}/hls/${uploadId}/playlist.m3u8`
+        hlsUrl(uploadId)
     }
   );
 
-
-  /*
-   * FFmpeg
-   */
 
   const args = [
 
     '-hide_banner',
 
     '-loglevel',
-    'warning',
+    'error',
 
     '-i',
     input,
@@ -1990,28 +2416,30 @@ async function transcodeToHls(
       'seg_%06d.ts'
     ),
 
-    path.join(
-      outDir,
-      'ffmpeg.m3u8'
-    )
+    ffmpegPlaylist
   ];
 
 
+  console.log(
+    `[FFmpeg开始] ${uploadId}`
+  );
+
+
   const p =
-    spawnLogged(
+    spawnFFmpeg(
       'ffmpeg',
-      args,
-      logFile
+      args
     );
 
-
-  /*
-   * FFmpeg 状态。
-   */
 
   p.on(
     'close',
     async code => {
+
+      console.log(
+        `[FFmpeg结束] ${uploadId} code=${code}`
+      );
+
 
       await writeJson(
         path.join(
@@ -2038,10 +2466,24 @@ async function transcodeToHls(
 
 
   /*
-   * 一边 FFmpeg，
-   * 一边上传七牛。
+   * 关键：
+   *
+   * FFmpeg 和七牛上传并行。
+   *
+   * FFmpeg：
+   *
+   * output/{id}/seg_xxx.ts
+   *
+   * Node：
+   *
+   * 发现 TS
+   * ↓
+   * 上传七牛
+   * ↓
+   * 立即写入 hls/{id}/playlist.m3u8
+   *
+   * 播放器无需等待 FFmpeg 完成。
    */
-
   await uploadSegmentsToQiniu(
     uploadId,
     outDir
@@ -2049,9 +2491,8 @@ async function transcodeToHls(
 
 
   /*
-   * 等 FFmpeg 完成。
+   * 等 FFmpeg 完成
    */
-
   await new Promise(
     resolve => {
 
@@ -2063,6 +2504,7 @@ async function transcodeToHls(
 
         return;
       }
+
 
       p.once(
         'close',
@@ -2087,19 +2529,28 @@ async function transcodeToHls(
   ) {
 
     throw new Error(
-      'FFmpeg处理失败，请检查 ffmpeg.log'
+      'FFmpeg处理失败'
     );
   }
 
 
   /*
-   * 删除 FFmpeg playlist
+   * 删除工作区 FFmpeg M3U8
    */
+  await fsp.unlink(
+    ffmpegPlaylist
+  ).catch(
+    () => {}
+  );
 
+
+  /*
+   * 删除 ffmpeg_state.json
+   */
   await fsp.unlink(
     path.join(
       outDir,
-      'ffmpeg.m3u8'
+      'ffmpeg_state.json'
     )
   ).catch(
     () => {}
@@ -2107,9 +2558,8 @@ async function transcodeToHls(
 
 
   /*
-   * 删除原始 MP4
+   * 删除原始 merged.mp4
    */
-
   await fsp.unlink(
     input
   ).catch(
@@ -2118,9 +2568,9 @@ async function transcodeToHls(
 
 
   /*
-   * 删除上传分片
+   * 删除 tmp 中的 .part
+   * 和 merged.mp4
    */
-
   const dir =
     uploadDir(
       uploadId
@@ -2161,29 +2611,96 @@ async function transcodeToHls(
   } catch {}
 
 
-  await writeJson(
+  /*
+   * 删除 meta.json
+   */
+  await fsp.unlink(
+    path.join(
+      dir,
+      'meta.json'
+    )
+  ).catch(
+    () => {}
+  );
+
+
+  /*
+   * 删除整个 tmp/{id}
+   */
+  await fsp.rm(
+    dir,
+    {
+      recursive:
+        true,
+
+      force:
+        true
+    }
+  ).catch(
+    () => {}
+  );
+
+
+  /*
+   * status.json 也删除
+   */
+  await fsp.unlink(
     path.join(
       outDir,
       'status.json'
-    ),
-    {
-      status:
-        'ready',
+    )
+  ).catch(
+    () => {}
+  );
 
-      uploadId,
 
-      endedAt:
-        Date.now(),
+  /*
+   * 删除工作区里可能残留的 TS
+   */
+  try {
 
-      m3u8:
-        `${PUBLIC_BASE}/hls/${uploadId}/playlist.m3u8`
+    const files =
+      await fsp.readdir(
+        outDir
+      );
+
+
+    for (
+      const file of files
+    ) {
+
+      if (
+        /^seg_\d+\.ts$/i.test(
+          file
+        )
+      ) {
+
+        await fsp.unlink(
+          path.join(
+            outDir,
+            file
+          )
+        ).catch(
+          () => {}
+        );
+      }
     }
+
+  } catch {}
+
+
+  console.log(
+    `[任务完成] ${uploadId}`
+  );
+
+  console.log(
+    `[最终播放] ${hlsUrl(uploadId)}`
   );
 }
 
 
 /* =========================================================
-   分片上传后台处理
+   上传任务
    ========================================================= */
 
 async function processUpload(
@@ -2211,8 +2728,7 @@ async function processUpload(
 
 
   const outDir =
-    path.join(
-      OUT,
+    outputDir(
       uploadId
     );
 
@@ -2220,13 +2736,14 @@ async function processUpload(
   await fsp.mkdir(
     outDir,
     {
-      recursive: true
+      recursive:
+        true
     }
   );
 
 
-  await createPlaceholderM3U8(
-    outDir
+  await createHlsPlaylist(
+    uploadId
   );
 
 
@@ -2262,8 +2779,13 @@ async function processUpload(
       meta
     );
 
-
   } catch (e) {
+
+    console.error(
+      `[任务失败] ${uploadId}`,
+      e.message
+    );
+
 
     await writeJson(
       path.join(
@@ -2274,11 +2796,13 @@ async function processUpload(
         status:
           'error',
 
+        uploadId,
+
         error:
           e.message,
 
         m3u8:
-          `${PUBLIC_BASE}/hls/${uploadId}/playlist.m3u8`
+          hlsUrl(uploadId)
       }
     ).catch(
       () => {}
@@ -2344,14 +2868,6 @@ async function downloadUrlToFile(
     );
 
 
-  let total =
-    Number(
-      res.headers.get(
-        'content-length'
-      ) || 0
-    );
-
-
   let got =
     0;
 
@@ -2370,6 +2886,7 @@ async function downloadUrlToFile(
     ) {
 
       ws.destroy();
+
 
       throw new Error(
         '视频超过2GB限制'
@@ -2404,6 +2921,7 @@ async function downloadUrlToFile(
         resolve
       );
 
+
       ws.on(
         'error',
         reject
@@ -2413,14 +2931,13 @@ async function downloadUrlToFile(
 
 
   return {
-    total,
     got
   };
 }
 
 
 /* =========================================================
-   URL 后台处理
+   URL 后台任务
    ========================================================= */
 
 async function processRemote(
@@ -2437,8 +2954,7 @@ async function processRemote(
 
 
   const outDir =
-    path.join(
-      OUT,
+    outputDir(
       uploadId
     );
 
@@ -2446,7 +2962,8 @@ async function processRemote(
   await fsp.mkdir(
     dir,
     {
-      recursive: true
+      recursive:
+        true
     }
   );
 
@@ -2454,13 +2971,14 @@ async function processRemote(
   await fsp.mkdir(
     outDir,
     {
-      recursive: true
+      recursive:
+        true
     }
   );
 
 
-  await createPlaceholderM3U8(
-    outDir
+  await createHlsPlaylist(
+    uploadId
   );
 
 
@@ -2515,14 +3033,10 @@ async function processRemote(
         uploadId,
 
         m3u8:
-          `${PUBLIC_BASE}/hls/${uploadId}/playlist.m3u8`
+          hlsUrl(uploadId)
       }
     );
 
-
-    /*
-     * 下载视频
-     */
 
     await downloadUrlToFile(
       url,
@@ -2554,10 +3068,6 @@ async function processRemote(
     );
 
 
-    /*
-     * FFmpeg + 七牛
-     */
-
     await transcodeToHls(
       uploadId,
       input,
@@ -2567,8 +3077,13 @@ async function processRemote(
       }
     );
 
-
   } catch (e) {
+
+    console.error(
+      `[URL任务失败] ${uploadId}`,
+      e.message
+    );
+
 
     await writeJson(
       path.join(
@@ -2585,7 +3100,7 @@ async function processRemote(
           e.message,
 
         m3u8:
-          `${PUBLIC_BASE}/hls/${uploadId}/playlist.m3u8`
+          hlsUrl(uploadId)
       }
     ).catch(
       () => {}
@@ -2595,7 +3110,7 @@ async function processRemote(
 
 
 /* =========================================================
-   请求 Body
+   Body
    ========================================================= */
 
 async function parseBody(
@@ -2648,10 +3163,6 @@ async function handle(
   res
 ) {
 
-  /*
-   * OPTIONS
-   */
-
   if (
     req.method ===
     'OPTIONS'
@@ -2671,6 +3182,7 @@ async function handle(
       }
     );
 
+
     return res.end();
   }
 
@@ -2680,6 +3192,70 @@ async function handle(
       req.url,
       `http://${req.headers.host}`
     );
+
+
+  /* =======================================================
+     首页
+     ======================================================= */
+
+  if (
+    req.method === 'GET' &&
+    (
+      u.pathname === '/' ||
+      u.pathname === '/index.html'
+    )
+  ) {
+
+    return servePublicFile(
+      'index.html',
+      res
+    );
+  }
+
+
+  /* =======================================================
+     public
+     ======================================================= */
+
+  if (
+    req.method === 'GET'
+  ) {
+
+    if (
+      !u.pathname.startsWith('/api/') &&
+      !u.pathname.startsWith('/hls/')
+    ) {
+
+      const relative =
+        decodeURIComponent(
+          u.pathname.replace(
+            /^\/+/,
+            ''
+          )
+        );
+
+
+      if (
+        relative &&
+        relative !== '/'
+      ) {
+
+        const publicFile =
+          await servePublicFile(
+            relative,
+            res
+          );
+
+
+        if (
+          publicFile === true
+        ) {
+
+          return;
+        }
+      }
+    }
+  }
 
 
   /* =======================================================
@@ -2708,8 +3284,20 @@ async function handle(
         youzan:
           true,
 
-        dingTalk:
-          false
+        player:
+          true,
+
+        publicBase:
+          PUBLIC_BASE,
+
+        frontend:
+          INDEX_FILE,
+
+        hlsDir:
+          HLS,
+
+        outputDir:
+          OUT
       }
     );
   }
@@ -2755,10 +3343,12 @@ async function handle(
           uploadId,
 
           chunkSize:
-            CHUNK_SIZE
+            CHUNK_SIZE,
+
+          m3u8:
+            hlsUrl(uploadId)
         }
       );
-
 
     } catch (e) {
 
@@ -2902,13 +3492,18 @@ async function handle(
         meta.totalChunks;
 
 
+      const m3u8 =
+        hlsUrl(
+          uploadId
+        );
+
+
       if (
         done
       ) {
 
         const outDir =
-          path.join(
-            OUT,
+          outputDir(
             uploadId
           );
 
@@ -2916,18 +3511,15 @@ async function handle(
         await fsp.mkdir(
           outDir,
           {
-            recursive: true
+            recursive:
+              true
           }
         );
 
 
-        await createPlaceholderM3U8(
-          outDir
+        await createHlsPlaylist(
+          uploadId
         );
-
-
-        const m3u8 =
-          `${PUBLIC_BASE}/hls/${uploadId}/playlist.m3u8`;
 
 
         const state =
@@ -2943,7 +3535,8 @@ async function handle(
           !state ||
           ![
             'processing',
-            'ready'
+            'ready',
+            'queued'
           ].includes(
             state.status
           )
@@ -2968,7 +3561,11 @@ async function handle(
           processUpload(
             uploadId
           ).catch(
-            console.error
+            e =>
+              console.error(
+                '[后台任务错误]',
+                e.message
+              )
           );
         }
 
@@ -3020,10 +3617,11 @@ async function handle(
 
           remaining:
             meta.totalChunks -
-            list.length
+            list.length,
+
+          m3u8
         }
       );
-
 
     } catch (e) {
 
@@ -3067,6 +3665,12 @@ async function handle(
       );
 
 
+    /*
+     * 任务完成后 tmp/{id}
+     * 会被删除。
+     *
+     * 所以这里允许已经没有 meta。
+     */
     if (
       !meta
     ) {
@@ -3079,7 +3683,10 @@ async function handle(
             false,
 
           error:
-            'uploadId不存在'
+            '任务不存在或已完成',
+
+          m3u8:
+            hlsUrl(uploadId)
         }
       );
     }
@@ -3093,8 +3700,7 @@ async function handle(
 
 
     const outDir =
-      path.join(
-        OUT,
+      outputDir(
         uploadId
       );
 
@@ -3132,14 +3738,14 @@ async function handle(
         state,
 
         m3u8:
-          `${PUBLIC_BASE}/hls/${uploadId}/playlist.m3u8`
+          hlsUrl(uploadId)
       }
     );
   }
 
 
   /* =======================================================
-     VIDEO URL
+     URL
      ======================================================= */
 
   if (
@@ -3185,8 +3791,7 @@ async function handle(
 
 
       const outDir =
-        path.join(
-          OUT,
+        outputDir(
           uploadId
         );
 
@@ -3200,7 +3805,8 @@ async function handle(
       await fsp.mkdir(
         dir,
         {
-          recursive: true
+          recursive:
+            true
         }
       );
 
@@ -3208,27 +3814,51 @@ async function handle(
       await fsp.mkdir(
         outDir,
         {
-          recursive: true
+          recursive:
+            true
         }
       );
 
 
-      await createPlaceholderM3U8(
-        outDir
+      /*
+       * 创建最终 HLS
+       */
+      await createHlsPlaylist(
+        uploadId
       );
 
 
       const m3u8 =
-        `${PUBLIC_BASE}/hls/${uploadId}/playlist.m3u8`;
+        hlsUrl(
+          uploadId
+        );
 
 
+      /*
+       * URL 创建后立即写入 links.json
+       */
+      await saveLink(
+        m3u8,
+        m.url
+      );
+
+
+      /*
+       * 立即返回
+       *
+       * 后台下载 + 转码
+       */
       processRemote(
         uploadId,
         m.url,
         m.filename ||
           'remote.mp4'
       ).catch(
-        console.error
+        e =>
+          console.error(
+            '[URL后台错误]',
+            e.message
+          )
       );
 
 
@@ -3244,7 +3874,6 @@ async function handle(
           m3u8
         }
       );
-
 
     } catch (e) {
 
@@ -3286,15 +3915,22 @@ async function handle(
       hm[2];
 
 
+    /*
+     * 现在 /hls 对应：
+     *
+     * data/hls
+     *
+     * 不再对应 data/output
+     */
     const base =
       path.resolve(
-        OUT
+        HLS
       );
 
 
     const file =
       path.resolve(
-        OUT,
+        HLS,
         uploadId,
         relative
       );
@@ -3365,13 +4001,22 @@ async function handle(
           'Content-Length':
             st.size,
 
+          /*
+           * M3U8 必须实时读取
+           */
           'Cache-Control':
             ext === '.m3u8'
-              ? 'no-cache, no-store'
+              ? 'no-cache, no-store, must-revalidate'
               : 'public, max-age=86400',
 
           'Access-Control-Allow-Origin':
-            '*'
+            '*',
+
+          'Access-Control-Allow-Headers':
+            '*',
+
+          'Accept-Ranges':
+            'bytes'
         }
       );
 
@@ -3381,7 +4026,6 @@ async function handle(
       ).pipe(
         res
       );
-
 
     } catch {
 
@@ -3394,35 +4038,6 @@ async function handle(
 
 
     return;
-  }
-
-
-  /* =======================================================
-     首页
-     ======================================================= */
-
-  if (
-    req.method === 'GET' &&
-    u.pathname === '/'
-  ) {
-
-    const html =
-      await fsp.readFile(
-        path.join(
-          __dirname,
-          'public',
-          'index.html'
-        ),
-        'utf8'
-      );
-
-
-    return text(
-      res,
-      200,
-      html,
-      'text/html; charset=utf-8'
-    );
   }
 
 
@@ -3442,8 +4057,8 @@ ensureDirs()
   .then(
     () => {
 
-      http
-        .createServer(
+      const server =
+        http.createServer(
           (
             req,
             res
@@ -3456,8 +4071,22 @@ ensureDirs()
               e => {
 
                 console.error(
+                  '[HTTP错误]',
                   e
                 );
+
+
+                if (
+                  res.headersSent
+                ) {
+
+                  try {
+                    res.end();
+                  } catch {}
+
+                  return;
+                }
+
 
                 json(
                   res,
@@ -3473,39 +4102,94 @@ ensureDirs()
               }
             );
           }
-        )
-        .listen(
-          PORT,
-          HOST,
-          () => {
-
-            console.log(
-              `Server started at ${HOST}:${PORT}`
-            );
-
-            console.log(
-              `PUBLIC_BASE=${PUBLIC_BASE}`
-            );
-
-            console.log(
-              'Upload mode: Youzan Token + Qiniu'
-            );
-
-            console.log(
-              'DingTalk upload: DISABLED'
-            );
-
-            console.log(
-              'PNG prefix: 125 bytes'
-            );
-          }
         );
+
+
+      server.listen(
+        PORT,
+        HOST,
+        () => {
+
+          console.log(
+            `[服务器] http://${HOST}:${PORT}`
+          );
+
+          console.log(
+            `[公网地址] ${PUBLIC_BASE}`
+          );
+
+          console.log(
+            `[前端] ${INDEX_FILE}`
+          );
+
+          console.log(
+            `[工作区] ${OUT}`
+          );
+
+          console.log(
+            `[最终HLS] ${HLS}`
+          );
+
+          console.log(
+            `[链接记录] ${LINKS_FILE}`
+          );
+        }
+      );
+
+
+      /*
+       * 优雅退出
+       */
+      const shutdown =
+        signal => {
+
+          console.log(
+            `[服务器] 收到 ${signal}，正在停止...`
+          );
+
+
+          server.close(
+            () => {
+
+              process.exit(
+                0
+              );
+            }
+          );
+
+
+          setTimeout(
+            () => {
+
+              process.exit(
+                1
+              );
+
+            },
+            5000
+          ).unref();
+        };
+
+
+      process.on(
+        'SIGTERM',
+        () =>
+          shutdown('SIGTERM')
+      );
+
+
+      process.on(
+        'SIGINT',
+        () =>
+          shutdown('SIGINT')
+      );
     }
   )
   .catch(
     e => {
 
       console.error(
+        '[启动失败]',
         e
       );
 

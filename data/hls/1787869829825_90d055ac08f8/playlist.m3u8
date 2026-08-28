@@ -1,0 +1,9 @@
+#EXTM3U
+#EXT-X-VERSION:3
+#EXT-X-TARGETDURATION:6
+#EXT-X-MEDIA-SEQUENCE:0
+#EXTINF:10.273967,
+https://img01.yzcdn.cn/upload_files/2026/08/28/Fs34eO9EVfEmbWm1MyF5IeAccOML.ts
+#EXTINF:6.199711,
+https://img01.yzcdn.cn/upload_files/2026/08/28/FlzfYTL1uGJH6x90_9fX9knLC95p.ts
+#EXT-X-ENDLIST
