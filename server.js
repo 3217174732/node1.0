@@ -15,7 +15,7 @@ const HOST =
   process.env.HOST || '0.0.0.0';
 
 const PORT =
-  Number(process.env.PORT || 8080);
+  Number(process.env.PORT || 8010);
 
 const PUBLIC_BASE =
   process.env.PUBLIC_BASE ||
